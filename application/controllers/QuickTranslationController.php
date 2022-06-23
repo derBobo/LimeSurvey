@@ -1,29 +1,32 @@
 <?php
 
-/*
- * LimeSurvey
- * Copyright (C) 2007-2011 The LimeSurvey Project Team / Carsten Schmitz
- * All rights reserved.
- * License: GNU/GPL License v2 or later, see LICENSE.php
- * LimeSurvey is free software. This version may have been modified pursuant
- * to the GNU General Public License, and as distributed it includes or
- * is derivative of works licensed under the GNU General Public License or
- * other free or open source software licenses.
- * See COPYRIGHT.php for copyright notices and details.
- *
- */
-/**
-* Translate Controller
-*
-* This controller performs translation actions for a specific survey.
- * Used words could be translated by an admin himself.
-*
-* @package      LimeSurvey
-* @subpackage   Backend
-*/
-class Translate extends SurveyCommonAction
+class QuickTranslationController extends LSBaseController
 {
-    public function index($surveyid)
+
+
+    /**
+     * Here we have to use the correct layout (NOT main.php)
+     *
+     * @param string $view
+     * @return bool
+     */
+    protected function beforeRender($view)
+    {
+        $this->layout = 'layout_questioneditor';
+        LimeExpressionManager::SetSurveyId($this->aData['surveyid']);
+        LimeExpressionManager::StartProcessingPage(false, true);
+
+        return parent::beforeRender($view);
+    }
+
+    /**
+     *
+     *
+     * @param $surveyid
+     * @return void
+     * @throws CHttpException
+     */
+    public function actionIndex($surveyid)
     {
         /* existing + read (survey) already checked in SurveyCommonAction : existing use model : then if surveyid is not valid : return a 404 */
         /* survey : read OK, not survey:tranlations:read … */
@@ -33,15 +36,23 @@ class Translate extends SurveyCommonAction
 
         $oSurvey = Survey::model()->findByPk($surveyid);
 
+        //------------------------ Initial and get helper classes  --------------
         //KCFINDER SETTINGS
         Yii::app()->session['FileManagerContext'] = "edit:survey:{$oSurvey->sid}";
         Yii::app()->loadHelper('admin.htmleditor');
         initKcfinder();
+        App()->getClientScript()->registerScriptFile(App()->getConfig('adminscripts') . 'translation.js');
+        Yii::app()->loadHelper("database");
+        Yii::app()->loadHelper("admin.htmleditor");
+        Yii::app()->loadHelper("surveytranslator");
+        //------------------------------------------------------------------------
 
-        $tolang = Yii::app()->getRequest()->getParam('lang');
-        if (!empty($tolang) && !in_array($tolang, $oSurvey->getAllLanguages())) {
+        //this GET-Param is the language to which it should be translated
+        $languageToTranslate = Yii::app()->getRequest()->getParam('lang');
+
+        if (!empty($languageToTranslate) && !in_array($languageToTranslate, $oSurvey->getAllLanguages())) {
             Yii::app()->setFlashMessage(gT("Invalid language"), 'warning');
-            $tolang = null;
+            $languageToTranslate = null;
         }
         $action = Yii::app()->getRequest()->getParam('action');
         $actionvalue = Yii::app()->getRequest()->getPost('actionvalue');
@@ -50,22 +61,17 @@ class Translate extends SurveyCommonAction
             echo $this->translateGoogleApi();
             return;
         }
-        App()->getClientScript()->registerScriptFile(App()->getConfig('adminscripts') . 'translation.js');
 
         $baselang = $oSurvey->language;
-        $langs = $oSurvey->additionalLanguages;
+        $additionalLanguages = $oSurvey->additionalLanguages;
 
-        Yii::app()->loadHelper("database");
-        Yii::app()->loadHelper("admin.htmleditor");
-
-        if (empty($tolang) && count($langs) > 0) {
-            $tolang = $langs[0];
+        //set it directly to the first additional language (if any exists), if no language was selected by user
+        if (empty($languageToTranslate) && count($additionalLanguages) > 0) {
+            $languageToTranslate = $additionalLanguages[0];
         }
 
         // TODO need to do some validation here on surveyid
         $survey_title = $oSurvey->defaultlanguage->surveyls_title;
-
-        Yii::app()->loadHelper("surveytranslator");
         $supportedLanguages = getLanguageData(false, Yii::app()->session['adminlang']);
 
         $baselangdesc = $supportedLanguages[$baselang]['description'];
@@ -73,26 +79,26 @@ class Translate extends SurveyCommonAction
         $aData = array(
             "surveyid" => $surveyid,
             "survey_title" => $survey_title,
-            "tolang" => $tolang,
-            "adminmenu" => $this->showTranslateAdminmenu($surveyid, $survey_title, $tolang)
+            "tolang" => $languageToTranslate,
         );
         $aViewUrls['translateheader_view'][] = $aData;
 
         $tab_names = array("title", "welcome", "group", "question", "subquestion", "answer",
-                        "emailinvite", "emailreminder", "emailconfirmation", "emailregistration",
-                        "emailbasicadminnotification", "emaildetailedadminnotification");
+            "emailinvite", "emailreminder", "emailconfirmation", "emailregistration",
+            "emailbasicadminnotification", "emaildetailedadminnotification");
 
-        if (!empty($tolang)) {
+
+        //todo: this is only necessary on save ...
+        if (!empty($languageToTranslate)) {
             // Only save if the administration user has the correct permission
             if ($actionvalue == "translateSave" && Permission::model()->hasSurveyPermission($surveyid, 'translations', 'update')) {
-                $this->translateSave($surveyid, $tolang, $baselang, $tab_names);
+                $this->translateSave($surveyid, $languageToTranslate, $baselang, $tab_names);
                 Yii::app()->setFlashMessage(gT("Saved"), 'success');
             }
 
-            $tolangdesc = $supportedLanguages[$tolang]['description'];
+            $tolangdesc = $supportedLanguages[$languageToTranslate]['description'];
             // Display tabs with fields to translate, as well as input fields for translated values
-            $aViewUrls = array_merge($aViewUrls, $this->displayUntranslatedFields($surveyid, $tolang, $baselang, $tab_names, $baselangdesc, $tolangdesc));
-            //var_dump(array_keys($aViewUrls));die();
+            $aViewUrls = array_merge($aViewUrls, $this->displayUntranslatedFields($surveyid, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc));
         }
 
         $aData['sidemenu']['state'] = false;
@@ -103,7 +109,12 @@ class Translate extends SurveyCommonAction
             $aData['topBar']['showSaveButton'] = true;
         }
 
-        $this->renderWrappedTemplate('translate', $aViewUrls, $aData);
+        $this->aData = $aData;
+        $this->render('index', [
+            'survey' => $oSurvey,
+            'languageToTranslate' => $languageToTranslate,
+            'additionalLanguages' => $additionalLanguages
+        ]);
     }
 
     /**
@@ -194,7 +205,7 @@ class Translate extends SurveyCommonAction
             $aData['type'] = $type;
             $aData['activeTab'] = ($i < 1);
             $aData['translateTabs'] = $this->displayTranslateFieldsHeader($baselangdesc, $tolangdesc, $type);
-            $aViewUrls['output'] .= $this->getController()->renderPartial("/admin/translate/translatetabs_view", $aData, true);
+            $aViewUrls['output'] .= $this->renderPartial("translatetabs_view", $aData, true);
 
             $countResultBase = count($resultbase);
             for ($j = 0; $j < $countResultBase; $j++) {
@@ -249,22 +260,22 @@ class Translate extends SurveyCommonAction
                 $all_fields_empty = !($textform_length > 0);
 
                 $aData = array_merge($aData, array(
-                                'textfrom' => $this->cleanup($textfrom, array()),
-                                'textfrom2' => $this->cleanup($textfrom2, array()),
-                                'textto' => $this->cleanup($textto, array()),
-                                'textto2' => $this->cleanup($textto2, array()),
-                                'rowfrom' => $aRowfrom,
-                                'rowfrom2' => $aResultBase2,
-                                'evenRow' => $evenRow,
-                                'gid' => $gid,
-                                'qid' => $qid,
-                                'amTypeOptions' => $amTypeOptions,
-                                'amTypeOptions2' => $amTypeOptions2,
-                                'i' => $j,
-                                'type' => $type,
-                                'type2' => $type2,
-                                'associated' => $associated,
-                            ));
+                    'textfrom' => $this->cleanup($textfrom, array()),
+                    'textfrom2' => $this->cleanup($textfrom2, array()),
+                    'textto' => $this->cleanup($textto, array()),
+                    'textto2' => $this->cleanup($textto2, array()),
+                    'rowfrom' => $aRowfrom,
+                    'rowfrom2' => $aResultBase2,
+                    'evenRow' => $evenRow,
+                    'gid' => $gid,
+                    'qid' => $qid,
+                    'amTypeOptions' => $amTypeOptions,
+                    'amTypeOptions2' => $amTypeOptions2,
+                    'i' => $j,
+                    'type' => $type,
+                    'type2' => $type2,
+                    'associated' => $associated,
+                ));
 
                 $aData['translateFields'] = $this->displayTranslateFields(
                     $iSurveyID,
@@ -297,36 +308,40 @@ class Translate extends SurveyCommonAction
                     );
                 }
 
-                $aViewUrls['output'] .= $this->getController()->renderPartial("/admin/translate/translatefields_view", $aData, true);
+                $aViewUrls['output'] .= $this->renderPartial("translatefields_view", $aData, true);
             } // end while
 
             $aData['all_fields_empty'] = $all_fields_empty;
             $aData['translateFieldsFooter'] = $this->displayTranslateFieldsFooter();
             $aData['bReadOnly'] = !Permission::model()->hasSurveyPermission($iSurveyID, 'translations', 'update');
-            $aViewUrls['output'] .= $this->getController()->renderPartial("/admin/translate/translatefieldsfooter_view", $aData, true);
+            $aViewUrls['output'] .= $this->renderPartial("translatefieldsfooter_view", $aData, true);
         } // end foreach
         // Submit buttonrender
         $aViewUrls['translatefooter_view'][] = $aData;
-        // var_dump($aViewUrls);
         return $aViewUrls;
     }
 
     /**
      * showTranslateAdminmenu() creates the main menu options for the survey translation page
      * @param string $iSurveyID The survey ID
-     * @param string $survey_title @deprecated
      * @param string $tolang
      * @return string
      */
-    private function showTranslateAdminmenu($iSurveyID, $survey_title, $tolang)
+    /** NOT NEEDED
+    private function showTranslateAdminmenu($iSurveyID, $tolang)
     {
         return $this->getLanguageList($iSurveyID, $tolang);
-    }
+    }*/
 
-    /*
+    /**
+     * This is the dropdown to select the language
     * getLanguageList() returns survey language list
+     *
+     *
     * @param string $iSurveyID Survey id
     * @param string $tolang The target translation code
+     *
+     * @return string
     */
     private function getLanguageList($iSurveyID, $tolang)
     {
@@ -776,7 +791,7 @@ class Translate extends SurveyCommonAction
         switch ($action) {
             case "queryto":
                 $baselang = $tolang;
-                /* FALLTHRU */
+            /* FALLTHRU */
             case "querybase":
                 switch ($type) {
                     case 'title':
@@ -806,18 +821,18 @@ class Translate extends SurveyCommonAction
                         return Question::model()->with('questionl10ns', array('condition' => 'language = ' . $baselang))->with('parent', 'group')->findAllByAttributes(array('sid' => $iSurveyID, 'parent_qid' => 0), array('order' => 'group_order, t.question_order, t.scale_id'));
                     case 'subquestion':
                         return Question::model()
-                        ->with('questionl10ns', array('condition' => 'language = ' . $baselang))
-                        ->with('parent', array('condition' => 'language = ' . $baselang))
-                        ->with('group', array('condition' => 'language = ' . $baselang))
-                        ->findAllByAttributes(array('sid' => $iSurveyID), array('order' => 'group_order, parent.question_order, t.scale_id, t.question_order', 'condition' => 't.parent_qid>0', 'params' => array()));
+                            ->with('questionl10ns', array('condition' => 'language = ' . $baselang))
+                            ->with('parent', array('condition' => 'language = ' . $baselang))
+                            ->with('group', array('condition' => 'language = ' . $baselang))
+                            ->findAllByAttributes(array('sid' => $iSurveyID), array('order' => 'group_order, parent.question_order, t.scale_id, t.question_order', 'condition' => 't.parent_qid>0', 'params' => array()));
                     case 'answer':
                         return Answer::model()
-                        ->with('answerl10ns', array('condition' => 'language = ' . $baselang))
-                        ->with('question')
-                        ->with('group')
-                        ->findAllByAttributes(array(), array('order' => 'group_order, question.question_order, t.scale_id, t.sortorder', 'condition' => 'question.sid=:sid', 'params' => array(':sid' => $iSurveyID)));
+                            ->with('answerl10ns', array('condition' => 'language = ' . $baselang))
+                            ->with('question')
+                            ->with('group')
+                            ->findAllByAttributes(array(), array('order' => 'group_order, question.question_order, t.scale_id, t.sortorder', 'condition' => 'question.sid=:sid', 'params' => array(':sid' => $iSurveyID)));
                 }
-                /* FALLTHRU */
+            /* FALLTHRU */
             case "queryupdate":
                 switch ($type) {
                     case 'title':
@@ -884,12 +899,12 @@ class Translate extends SurveyCommonAction
     {
 
         $translateoutput = "<table class='table table-striped'>";
-            $translateoutput .= '<thead>';
-            $threeRows = ($type == 'question' || $type == 'subquestion' || $type == 'question_help' || $type == 'answer');
-            $translateoutput .= $threeRows ? '<th class="col-md-2 text-strong">' . gT('Question code / ID') . "</th>" : '';
-            $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $baselangdesc . "</th>";
-            $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $tolangdesc . "</th>";
-            $translateoutput .= '</thead>';
+        $translateoutput .= '<thead>';
+        $threeRows = ($type == 'question' || $type == 'subquestion' || $type == 'question_help' || $type == 'answer');
+        $translateoutput .= $threeRows ? '<th class="col-md-2 text-strong">' . gT('Question code / ID') . "</th>" : '';
+        $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $baselangdesc . "</th>";
+        $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $tolangdesc . "</th>";
+        $translateoutput .= '</thead>';
 
         return $translateoutput;
     }
@@ -926,11 +941,11 @@ class Translate extends SurveyCommonAction
     ) {
         $translateoutput = "";
         $translateoutput .= "<tr>";
-            $value1 = (!empty($amTypeOptions["id1"])) ? $rowfrom[$amTypeOptions["id1"]] : "";
-            $value2 = (!empty($amTypeOptions["id2"])) ? $rowfrom[$amTypeOptions["id2"]] : "";
-            $iScaleID = (!empty($amTypeOptions["scaleid"])) ? $rowfrom[$amTypeOptions["scaleid"]] : "";
-            // Display text in original language
-            // Display text in foreign language. Save a copy in type_oldvalue_i to identify changes before db update
+        $value1 = (!empty($amTypeOptions["id1"])) ? $rowfrom[$amTypeOptions["id1"]] : "";
+        $value2 = (!empty($amTypeOptions["id2"])) ? $rowfrom[$amTypeOptions["id2"]] : "";
+        $iScaleID = (!empty($amTypeOptions["scaleid"])) ? $rowfrom[$amTypeOptions["scaleid"]] : "";
+        // Display text in original language
+        // Display text in foreign language. Save a copy in type_oldvalue_i to identify changes before db update
         if ($type == 'answer') {
             $translateoutput .= "<td class='col-sm-2'>" . htmlspecialchars($rowfrom['answer']) . " (" . $rowfrom['qid'] . ") </td>";
         }
@@ -940,52 +955,52 @@ class Translate extends SurveyCommonAction
             $translateoutput .= "<td class='col-sm-2'>" . htmlspecialchars($rowfrom['parent']['title']) . " ({$rowfrom['parent']['qid']}) </td>";
         }
 
-            $translateoutput .= "<td class='_from_ col-sm-5' id='" . $type . "_from_" . $i . "'><div class='question-text-from'>"
-                                    . showJavaScript($textfrom)
-                                . "</div></td>";
+        $translateoutput .= "<td class='_from_ col-sm-5' id='" . $type . "_from_" . $i . "'><div class='question-text-from'>"
+            . showJavaScript($textfrom)
+            . "</div></td>";
 
-            $translateoutput .= "<td class='col-sm-5'>";
+        $translateoutput .= "<td class='col-sm-5'>";
 
-            $translateoutput .= CHtml::hiddenField("{$type}_id1_{$i}", $value1);
-            $translateoutput .= CHtml::hiddenField("{$type}_id2_{$i}", $value2);
+        $translateoutput .= CHtml::hiddenField("{$type}_id1_{$i}", $value1);
+        $translateoutput .= CHtml::hiddenField("{$type}_id2_{$i}", $value2);
         if (is_numeric($iScaleID)) {
             $translateoutput .= CHtml::hiddenField("{$type}_scaleid_{$i}", $iScaleID);
         }
-            $nrows = max($this->calcNRows($textfrom), $this->calcNRows($textto));
-            $translateoutput .= CHtml::hiddenField("{$type}_oldvalue_{$i}", $textto);
+        $nrows = max($this->calcNRows($textfrom), $this->calcNRows($textto));
+        $translateoutput .= CHtml::hiddenField("{$type}_oldvalue_{$i}", $textto);
 
-            $minHeight = 'auto';
+        $minHeight = 'auto';
         if ($amTypeOptions["HTMLeditorDisplay"] == "Popup") {
             $minHeight = "25px";
         } elseif ($amTypeOptions["HTMLeditorDisplay"] == "Modal") {
             $minHeight = "30px";
         }
-            $aDisplayOptions = array(
-                'class' => 'col-sm-10',
-                'cols' => '75',
-                'rows' => $nrows,
-                'readonly' => !Permission::model()->hasSurveyPermission($iSurveyID, 'translations', 'update')
-            );
-            if ($type == 'group') {
-                $aDisplayOptions['maxlength'] = 100;
-            }
+        $aDisplayOptions = array(
+            'class' => 'col-sm-10',
+            'cols' => '75',
+            'rows' => $nrows,
+            'readonly' => !Permission::model()->hasSurveyPermission($iSurveyID, 'translations', 'update')
+        );
+        if ($type == 'group') {
+            $aDisplayOptions['maxlength'] = 100;
+        }
 
-            $translateoutput .= CHtml::textArea("{$type}_newvalue_{$i}", $textto, $aDisplayOptions);
-            $htmleditor_data = array(
-                "edit" . $type,
-                $type . "_newvalue_" . $i,
-                htmlspecialchars($textto),
-                $iSurveyID,
-                $gid,
-                $qid,
-                "translate" . $amTypeOptions["HTMLeditorType"]
-            );
-            $translateoutput .= $this->loadEditor($amTypeOptions, $htmleditor_data);
+        $translateoutput .= CHtml::textArea("{$type}_newvalue_{$i}", $textto, $aDisplayOptions);
+        $htmleditor_data = array(
+            "edit" . $type,
+            $type . "_newvalue_" . $i,
+            htmlspecialchars($textto),
+            $iSurveyID,
+            $gid,
+            $qid,
+            "translate" . $amTypeOptions["HTMLeditorType"]
+        );
+        $translateoutput .= $this->loadEditor($amTypeOptions, $htmleditor_data);
 
-            $translateoutput .= "</td>";
-            $translateoutput .= "</tr>";
+        $translateoutput .= "</td>";
+        $translateoutput .= "</tr>";
 
-            return $translateoutput;
+        return $translateoutput;
     }
 
     /**
@@ -1152,4 +1167,5 @@ class Translate extends SurveyCommonAction
         $aData['display']['menu_bars'] = false;
         parent::renderWrappedTemplate($sAction, $aViewUrls, $aData, $sRenderFile);
     }
+
 }

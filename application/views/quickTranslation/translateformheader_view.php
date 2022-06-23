@@ -1,4 +1,4 @@
-<?php //echo print_r($amTypeOptions,true);?>
+
 <div id="translationloading" style="width: 100%; font-weight: bold; color: #000; text-align: center;">
     <br />
     <?php eT("Loading translations");?><br /><br />
