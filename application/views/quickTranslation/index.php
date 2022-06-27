@@ -57,7 +57,6 @@
                 }
                 ?>
             </div>
-
             </form>
         </div>
     </div>
@@ -68,4 +67,5 @@
                 <?php eT("Translate survey");?>
             </h4>
         </div>
+    </div>
 <?php

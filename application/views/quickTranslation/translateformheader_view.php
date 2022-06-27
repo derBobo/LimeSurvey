@@ -4,7 +4,7 @@
     <?php eT("Loading translations");?><br /><br />
 </div>
 
-<?php echo CHtml::form(array("admin/translate/sa/index/surveyid/{$surveyid}/lang/{$tolang}"), 'post', array('name'=>'translateform','id'=>'translateform'));?>
+<?php echo CHtml::form(array("quickTranslation/index/surveyid/{$surveyid}/lang/{$tolang}"), 'post', array('name'=>'translateform','id'=>'translateform'));?>
     <input type='hidden' name='sid' value='<?php echo $surveyid;?>' />
     <input type='hidden' name='action' value='translate' />
     <input type='hidden' name='actionvalue' value='translateSave'/>
@@ -14,7 +14,7 @@
     <script type="text/javascript">
         sGoogleApiError = "<?php eT("There was an error using the Google API.");?>";
         sDetailedError  = "<?php eT("Detailed Error");?>";
-        translateJsonUrl = "<?php echo $this->createUrl("admin/translate/sa/ajaxtranslategoogleapi"); ?>";
+        translateJsonUrl = "<?php echo $this->createUrl("quickTranslation/ajaxtranslategoogleapi"); ?>";
     </script>
 
     <div id="translationtabs" >

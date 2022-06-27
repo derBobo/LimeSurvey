@@ -41,13 +41,14 @@ class QuickTranslationController extends LSBaseController
         Yii::app()->session['FileManagerContext'] = "edit:survey:{$oSurvey->sid}";
         Yii::app()->loadHelper('admin.htmleditor');
         initKcfinder();
+
         App()->getClientScript()->registerScriptFile(App()->getConfig('adminscripts') . 'translation.js');
         Yii::app()->loadHelper("database");
         Yii::app()->loadHelper("admin.htmleditor");
         Yii::app()->loadHelper("surveytranslator");
         //------------------------------------------------------------------------
 
-        //this GET-Param is the language to which it should be translated
+        //this GET-Param is the language to which it should be translated (e.g. 'de')
         $languageToTranslate = Yii::app()->getRequest()->getParam('lang');
 
         if (!empty($languageToTranslate) && !in_array($languageToTranslate, $oSurvey->getAllLanguages())) {
@@ -57,6 +58,7 @@ class QuickTranslationController extends LSBaseController
         $action = Yii::app()->getRequest()->getParam('action');
         $actionvalue = Yii::app()->getRequest()->getPost('actionvalue');
 
+        //todo: is this really needed when it is a own action now ...?
         if ($action == "ajaxtranslategoogleapi") {
             echo $this->translateGoogleApi();
             return;
@@ -81,24 +83,27 @@ class QuickTranslationController extends LSBaseController
             "survey_title" => $survey_title,
             "tolang" => $languageToTranslate,
         );
-        $aViewUrls['translateheader_view'][] = $aData;
+        //$aViewUrls['translateheader_view'][] = $aData;
 
         $tab_names = array("title", "welcome", "group", "question", "subquestion", "answer",
             "emailinvite", "emailreminder", "emailconfirmation", "emailregistration",
             "emailbasicadminnotification", "emaildetailedadminnotification");
 
 
-        //todo: this is only necessary on save ...
         if (!empty($languageToTranslate)) {
             // Only save if the administration user has the correct permission
+            //todo: this is only necessary on save ...
             if ($actionvalue == "translateSave" && Permission::model()->hasSurveyPermission($surveyid, 'translations', 'update')) {
-                $this->translateSave($surveyid, $languageToTranslate, $baselang, $tab_names);
+                $this->translateSave($oSurvey, $languageToTranslate, $baselang, $tab_names);
                 Yii::app()->setFlashMessage(gT("Saved"), 'success');
             }
 
             $tolangdesc = $supportedLanguages[$languageToTranslate]['description'];
             // Display tabs with fields to translate, as well as input fields for translated values
-            $aViewUrls = array_merge($aViewUrls, $this->displayUntranslatedFields($surveyid, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc));
+
+            $views = $this->displayUntranslatedFields($oSurvey, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc);
+
+            //$aViewUrls = array_merge($aViewUrls, $this->displayUntranslatedFields($surveyid, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc));
         }
 
         $aData['sidemenu']['state'] = false;
@@ -109,6 +114,7 @@ class QuickTranslationController extends LSBaseController
             $aData['topBar']['showSaveButton'] = true;
         }
 
+        $aData['display']['menu_bars'] = false;
         $this->aData = $aData;
         $this->render('index', [
             'survey' => $oSurvey,
@@ -118,11 +124,16 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
-     * @param string[] $tab_names
+     * @param $survey Survey the survey object
+     * @param $tolang
+     * @param $baselang
+     * @param $tab_names
+     * @return void
      */
-    private function translateSave($iSurveyID, $tolang, $baselang, $tab_names)
+    private function translateSave($survey, $tolang, $baselang, $tab_names)
     {
         $tab_names_full = $tab_names;
+        $quickTranslate = new \LimeSurvey\Models\Services\QuickTranslation($survey);
 
         foreach ($tab_names as $type) {
             $amTypeOptions = $this->setupTranslateFields($type);
@@ -148,7 +159,8 @@ class QuickTranslationController extends LSBaseController
                         $id1 = Yii::app()->getRequest()->getPost("{$type}_id1_{$i}");
                         $id2 = Yii::app()->getRequest()->getPost("{$type}_id2_{$i}");
                         $iScaleID = Yii::app()->getRequest()->getPost("{$type}_scaleid_{$i}");
-                        $this->query($type, 'queryupdate', $iSurveyID, $tolang, $baselang, $id1, $id2, $iScaleID, $new);
+                        $quickTranslate->updateTranslations($type, $tolang, $new, $id1, $id2, $iScaleID);
+                        //$this->query($type, 'queryupdate', $iSurveyID, $tolang, $baselang, $id1, $id2, $iScaleID, $new);
                     }
                 }
                 $i++;
@@ -157,12 +169,26 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
+     *
+     *
      * @param string[] $tab_names
+     * @throws CException
      */
-    private function displayUntranslatedFields($iSurveyID, $tolang, $baselang, $tab_names, $baselangdesc, $tolangdesc)
+
+    /**
+     * @param $survey Survey the survey object
+     * @param $tolang
+     * @param $baselang
+     * @param $tab_names
+     * @param $baselangdesc
+     * @param $tolangdesc
+     * @return array
+     * @throws CException
+     */
+    private function displayUntranslatedFields($survey, $tolang, $baselang, $tab_names, $baselangdesc, $tolangdesc)
     {
         // Define aData
-        $aData['surveyid'] = $iSurveyID;
+        $aData['surveyid'] = $survey->sid;
         $aData['tab_names'] = $tab_names;
         $aData['tolang'] = $tolang;
         $aData['baselang'] = $baselang;
@@ -174,20 +200,20 @@ class QuickTranslationController extends LSBaseController
 
         //Set the output as empty
         $aViewUrls['output'] = '';
-        // Define content of each tab
 
-        //iterate through all tabs
-        $allTabNames = count($tab_names);
-        for ($i = 0; $i < $allTabNames; $i++) {
-            $type = $tab_names[$i];
-            $amTypeOptions = $this->setupTranslateFields($type);
+        $quickTranslation = new \LimeSurvey\Models\Services\QuickTranslation($survey);
+
+        //iterate through all tabs and define content of each tab
+        //$allTabNames = count($tab_names);
+        foreach ($tab_names as $tabName) {
+            $amTypeOptions = $this->setupTranslateFields($tabName);
             // Setup form
             $evenRow = false; //deprecated => using css
 
             $all_fields_empty = true;
 
-            $resultbase = $this->query($type, "querybase", $iSurveyID, $tolang, $baselang);
-            $resultto = $this->query($type, "queryto", $iSurveyID, $tolang, $baselang);
+            $resultbase = $quickTranslation->getTranslations($tabName, $baselang);
+            $resultto =  $quickTranslation->getTranslations($tabName, $tolang);
 
             $type2 = $amTypeOptions["associated"];
             $associated = false;
@@ -195,16 +221,19 @@ class QuickTranslationController extends LSBaseController
                 $associated = true;
                 //get type otions again again
                 $amTypeOptions2 = $this->setupTranslateFields($type2);
-                $resultbase2 = $this->query($type, "querybase", $iSurveyID, $tolang, $baselang);
-                $resultto2 = $this->query($type, "queryto", $iSurveyID, $tolang, $baselang);
+                $resultbase2 = $quickTranslation->getTranslations($tabName, $baselang);
+                $resultto2 = $quickTranslation->getTranslations($tabName, $tolang);
             } else {
                 $resultbase2 = $resultbase;
                 $resultto2 = $resultto;
             }
 
-            $aData['type'] = $type;
-            $aData['activeTab'] = ($i < 1);
-            $aData['translateTabs'] = $this->displayTranslateFieldsHeader($baselangdesc, $tolangdesc, $type);
+            $aData['type'] = $tabName;
+
+            //always set first tab active
+            $aData['activeTab'] = $tabName === 'title';
+
+            $aData['translateTabs'] = $this->displayTranslateFieldsHeader($baselangdesc, $tolangdesc, $tabName);
             $aViewUrls['output'] .= $this->renderPartial("translatetabs_view", $aData, true);
 
             $countResultBase = count($resultbase);
@@ -272,28 +301,28 @@ class QuickTranslationController extends LSBaseController
                     'amTypeOptions' => $amTypeOptions,
                     'amTypeOptions2' => $amTypeOptions2,
                     'i' => $j,
-                    'type' => $type,
+                    'type' => $tabName,
                     'type2' => $type2,
                     'associated' => $associated,
                 ));
 
                 $aData['translateFields'] = $this->displayTranslateFields(
-                    $iSurveyID,
+                    $survey->sid,
                     $gid,
                     $qid,
-                    $type,
+                    $tabName,
                     $amTypeOptions,
                     $baselangdesc,
                     $tolangdesc,
                     $textfrom,
                     $textto,
                     $j,
-                    $aRowfrom,
+                    $aRowfrom, //todo: what happend here?
                     $evenRow
                 );
-                if ($associated && strlen(trim((string) $textfrom2)) > 0) {
+                if ($associated && strlen(trim($textfrom2)) > 0) {
                     $aData['translateFields'] .= $this->displayTranslateFields(
-                        $iSurveyID,
+                        $survey->sid,
                         $gid,
                         $qid,
                         $type2,
@@ -303,92 +332,22 @@ class QuickTranslationController extends LSBaseController
                         $textfrom2,
                         $textto2,
                         $j,
-                        $aResultBase2,
+                        $aResultBase2, //todo:  what happend here?
                         $evenRow
                     );
                 }
 
                 $aViewUrls['output'] .= $this->renderPartial("translatefields_view", $aData, true);
-            } // end while
+            } // end for
 
             $aData['all_fields_empty'] = $all_fields_empty;
             $aData['translateFieldsFooter'] = $this->displayTranslateFieldsFooter();
-            $aData['bReadOnly'] = !Permission::model()->hasSurveyPermission($iSurveyID, 'translations', 'update');
+            $aData['bReadOnly'] = !Permission::model()->hasSurveyPermission($survey->sid, 'translations', 'update');
             $aViewUrls['output'] .= $this->renderPartial("translatefieldsfooter_view", $aData, true);
         } // end foreach
         // Submit buttonrender
         $aViewUrls['translatefooter_view'][] = $aData;
         return $aViewUrls;
-    }
-
-    /**
-     * showTranslateAdminmenu() creates the main menu options for the survey translation page
-     * @param string $iSurveyID The survey ID
-     * @param string $tolang
-     * @return string
-     */
-    /** NOT NEEDED
-    private function showTranslateAdminmenu($iSurveyID, $tolang)
-    {
-        return $this->getLanguageList($iSurveyID, $tolang);
-    }*/
-
-    /**
-     * This is the dropdown to select the language
-    * getLanguageList() returns survey language list
-     *
-     *
-    * @param string $iSurveyID Survey id
-    * @param string $tolang The target translation code
-     *
-     * @return string
-    */
-    private function getLanguageList($iSurveyID, $tolang)
-    {
-        $language_list = "";
-        $oSurvey = Survey::model()->findByPk($iSurveyID);
-
-        $langs = $oSurvey->additionalLanguages;
-        $supportedLanguages = getLanguageData(false, Yii::app()->session['adminlang']);
-
-        $language_list .= CHtml::openTag('div', array('class' => 'form-group')); // Opens .menubar-right div
-
-        $language_list .= CHtml::tag('label', array('for' => 'translationlanguage', 'class' => 'control-label'), gT("Translate to") . ":");
-        $language_list .= CHtml::openTag(
-            'select',
-            array(
-                'id' => 'translationlanguage',
-                'name' => 'lang',
-                'class' => 'form-control',
-                'onchange' => "$(this).closest('form').submit();"
-            )
-        );
-        if (count($oSurvey->additionalLanguages) > 1) {
-            $language_list .= CHtml::tag(
-                'option',
-                array(
-                    'selected' => empty($tolang),
-                    'value' => ''
-                ),
-                gT("Please choose...")
-            );
-        }
-
-        foreach ($langs as $lang) {
-            $tolangtext = $supportedLanguages[$lang]['description'];
-            $language_list .= CHtml::tag(
-                'option',
-                array(
-                    'selected' => ($tolang == $lang),
-                    'value' => $lang
-                ),
-                $tolangtext
-            );
-        }
-        $language_list .= CHtml::closeTag('select');
-        $language_list .= CHtml::closeTag('div'); // form-group
-
-        return $language_list;
     }
 
     private function cleanup($string, $options = array())
@@ -406,7 +365,7 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
-     * setupTranslateFields() creates a customised array with database query
+     * creates a customised array with database query
      * information for use by survey translation
      * @param string $type Type of database field that is being translated, e.g. title, question, etc.
      * @return array
@@ -784,6 +743,7 @@ class QuickTranslationController extends LSBaseController
      * @param string $action
      * @param string $type
      */
+    /**
     private function query($type, $action, $iSurveyID, $tolang, $baselang, $id1 = "", $id2 = "", $iScaleID = "", $new = "")
     {
         $amTypeOptions = array();
@@ -791,7 +751,7 @@ class QuickTranslationController extends LSBaseController
         switch ($action) {
             case "queryto":
                 $baselang = $tolang;
-            /* FALLTHRU */
+            /* FALLTHRU
             case "querybase":
                 switch ($type) {
                     case 'title':
@@ -832,7 +792,7 @@ class QuickTranslationController extends LSBaseController
                             ->with('group')
                             ->findAllByAttributes(array(), array('order' => 'group_order, question.question_order, t.scale_id, t.sortorder', 'condition' => 'question.sid=:sid', 'params' => array(':sid' => $iSurveyID)));
                 }
-            /* FALLTHRU */
+            /* FALLTHRU
             case "queryupdate":
                 switch ($type) {
                     case 'title':
@@ -888,8 +848,10 @@ class QuickTranslationController extends LSBaseController
         }
     }
 
+    */
+
     /**
-     * displayTranslateFieldsHeader() Formats and displays header of translation fields table
+     * Formats and displays header of translation fields table
      * @param string $baselangdesc The source translation language, e.g. "English"
      * @param string $tolangdesc The target translation language, e.g. "German"
      * @param string $type
@@ -1090,10 +1052,18 @@ class QuickTranslationController extends LSBaseController
         return $image;
     }
 
-    public function ajaxtranslategoogleapi()
+    /**
+     *
+     *
+     * @return void
+     */
+    public function actionAjaxtranslategoogleapi()
     {
         // Ensure YII_CSRF_TOKEN, we are in admin, then only user with admin right can post
         /* No Permission check on survey, seems unneded (return a josn with current string posted */
+
+        //todo: check permission
+        //todo: check if googletranslate is activated ...
         if (Yii::app()->request->isPostRequest) {
             echo self::translateGoogleApi();
         }
@@ -1153,19 +1123,6 @@ class QuickTranslationController extends LSBaseController
 
         header('Content-type: application/json');
         return ls_json_encode($aOutput);
-    }
-
-    /**
-     * Renders template(s) wrapped in header and footer
-     *
-     * @param string $sAction Current action, the folder to fetch views from
-     * @param string|array $aViewUrls View url(s)
-     * @param array $aData Data to be passed on. Optional.
-     */
-    protected function renderWrappedTemplate($sAction = 'translate', $aViewUrls = array(), $aData = array(), $sRenderFile = false)
-    {
-        $aData['display']['menu_bars'] = false;
-        parent::renderWrappedTemplate($sAction, $aViewUrls, $aData, $sRenderFile);
     }
 
 }
