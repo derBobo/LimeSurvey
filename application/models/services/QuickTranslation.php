@@ -48,36 +48,6 @@ class QuickTranslation
         $this->survey = $survey;
     }
 
-
-    /**
-     *
-     * @param string $type
-     * @param string $action  must be 'queryto', 'querybase', 'queryupdate'
-     * @param $iSurveyID
-     * @param $tolang
-     * @param $baselang
-     * @param string $id1
-     * @param string $id2
-     * @param string $iScaleID
-     * @param string $new
-     * @return array|\CActiveRecord|int|mixed|SurveyLanguageSetting[]|void|null
-     */
-    public function query($type, $action, $iSurveyID, $tolang, $baselang, $id1 = "", $id2 = "", $iScaleID = "", $new = "")
-    {
-        // TODO: Fallthru on purpose or not?
-        switch ($action) {
-            case "queryto":
-                $baselang = $tolang;
-            /* FALLTHRU */
-            case "querybase":
-                $this->getTranslations($type, $baselang);
-                break;
-            /* FALLTHRU */
-            case "queryupdate":
-                $this->updateTranslations($type,$tolang,$new);
-        }
-    }
-
     /**
      * This function gets the translation for a specific type. Different types need different query.
      *
@@ -120,7 +90,10 @@ class QuickTranslation
                 return Question::model()
                     ->with('questionl10ns', ['condition' => 'language = ' . $baselang])
                     ->with('parent', 'group')
-                    ->findAllByAttributes(['sid' => $this->survey->sid, 'parent_qid' => 0], array('order' => 'group_order, t.question_order, t.scale_id'));
+                    ->findAllByAttributes(
+                        ['sid' => $this->survey->sid, 'parent_qid' => 0],
+                        ['order' => 'group_order, t.question_order, t.scale_id']
+                    );
             case 'subquestion':
                 return Question::model()
                     ->with('questionl10ns', array('condition' => 'language = ' . $baselang))
@@ -138,18 +111,28 @@ class QuickTranslation
                     ->with('answerl10ns', array('condition' => 'language = ' . $baselang))
                     ->with('question')
                     ->with('group')
-                    ->findAllByAttributes(array(), array('order' => 'group_order, question.question_order, t.scale_id, t.sortorder', 'condition' => 'question.sid=:sid', 'params' => array(':sid' => $this->survey->sid)));
+                    ->findAllByAttributes(
+                        [],
+                        [
+                            'order' => 'group_order, question.question_order, t.scale_id, t.sortorder',
+                            'condition' => 'question.sid=:sid',
+                            'params' => array(':sid' => $this->survey->sid)
+                        ]
+                    );
         }
     }
 
     /**
+     * Updates the translation for a given field name (e.g. surveyls_title)
+     *
      * @param $fieldName  string the field name from frontend
      * @param $tolang string shortcut for language (e.g. 'de')
      * @param $new   string the new value to save as translation
      * @param $id1 int  groupid or questionid
      * @param $answerCode string the answer code
      * @param $iScaleID
-     * @return int|void
+     *
+     * @return int|null
      */
     public function updateTranslations($fieldName, $tolang, $new, $id1 = 0, $answerCode = '', $iScaleID = '')
     {
@@ -211,6 +194,425 @@ class QuickTranslation
             case 'answer':
                 $oAnswer = Answer::model()->find('qid = :qid and code = :code and scale_id = :scale_id', array(':qid' => $id1, ':code' => $answerCode, ':scale_id' => $iScaleID));
                 return AnswerL10n::model()->updateAll(array('answer' => $new), 'aid = :aid and language = :language', array(':aid' => $oAnswer->aid, ':language' => $tolang));
+            default:
+                return null;
         }
+    }
+
+    /**
+     * Creates a customised array with database information
+     * information for use by survey translation
+     *
+     * @param string $type Type of database field that is being translated, e.g. title, question, etc.
+     * @return array
+     */
+    public function setupTranslateFields($type)
+    {
+        $aData = array();
+
+        switch ($type) {
+            case 'title':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_title',
+                    'id1' => '', //todo: description... what is id1?
+                    'id2' => '', //todo: description... what is id2?
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Survey title and description"),
+                    'HTMLeditorType' => "title",
+                    'HTMLeditorDisplay' => "Inline",
+                    'associated' => "description"
+                );
+                break;
+
+            case 'description':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_description',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Description:"),
+                    'HTMLeditorType' => "description",
+                    'HTMLeditorDisplay' => "Inline",
+                    'associated' => ""
+                );
+                break;
+
+            case 'welcome':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_welcometext',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Welcome and end text"),
+                    'HTMLeditorType' => "welcome",
+                    'HTMLeditorDisplay' => "Inline",
+                    'associated' => "end"
+                );
+                break;
+
+            case 'end':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_endtext',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("End message:"),
+                    'HTMLeditorType' => "end",
+                    'HTMLeditorDisplay' => "Inline",
+                    'associated' => ""
+                );
+                break;
+
+            case 'group':
+                $aData = array(
+                    'type' => 2,
+                    'dbColumn' => 'group_name',
+                    'id1' => 'gid',
+                    'id2' => '',
+                    'gid' => true,
+                    'qid' => false,
+                    'description' => gT("Question groups"),
+                    'HTMLeditorType' => "group",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => "group_desc"
+                );
+                break;
+
+            case 'group_desc':
+                $aData = array(
+                    'type' => 2,
+                    'dbColumn' => 'description',
+                    'id1' => 'gid',
+                    'id2' => '',
+                    'gid' => true,
+                    'qid' => false,
+                    'description' => gT("Group description"),
+                    'HTMLeditorType' => "group_desc",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'question':
+                $aData = array(
+                    'type' => 3,
+                    'dbColumn' => 'question',
+                    'id1' => 'qid',
+                    'id2' => '',
+                    'gid' => true,
+                    'qid' => true,
+                    'description' => gT("Questions"),
+                    'HTMLeditorType' => "question",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => "question_help"
+                );
+                break;
+
+            case 'question_help':
+                $aData = array(
+                    'type' => 3,
+                    'dbColumn' => 'help',
+                    'id1' => 'qid',
+                    'id2' => '',
+                    'gid' => true,
+                    'qid' => true,
+                    'description' => gT("Question help"),
+                    'HTMLeditorType' => "question_help",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'subquestion':
+                $aData = array(
+                    'type' => 4,
+                    'dbColumn' => 'question',
+                    'id1' => 'qid',
+                    'id2' => '',
+                    'gid' => true,
+                    'qid' => true,
+                    'description' => gT("Subquestions"),
+                    'HTMLeditorType' => "question",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'answer': // TODO not touched
+                $aData = array(
+                    'type' => 5,
+                    'dbColumn' => 'answer',
+                    'id1' => 'qid',
+                    'id2' => 'code',
+                    'scaleid' => 'scale_id',
+                    'gid' => false,
+                    'qid' => true,
+                    'description' => gT("Answer options"),
+                    'HTMLeditorType' => "subquestion",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emailinvite':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_invite_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Invitation email subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emailinvitebody"
+                );
+                break;
+
+            case 'emailinvitebody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_invite',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Invitation email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emailreminder':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_remind_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Reminder email subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emailreminderbody"
+                );
+                break;
+
+            case 'emailreminderbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_remind',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Reminder email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emailconfirmation':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_confirm_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Confirmation email subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emailconfirmationbody"
+                );
+                break;
+
+            case 'emailconfirmationbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_confirm',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Confirmation email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emailregistration':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_register_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Registration email subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emailregistrationbody"
+                );
+                break;
+
+            case 'emailregistrationbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_register',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Registration email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'email_confirm':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_confirm_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Confirmation email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "email_confirmbody"
+                );
+                break;
+
+            case 'email_confirmbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'surveyls_email_confirm',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Confirmation email"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emailbasicadminnotification':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'email_admin_notification_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Basic admin notification subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emailbasicadminnotificationbody"
+                );
+                break;
+
+            case 'emailbasicadminnotificationbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'email_admin_notification',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Basic admin notification"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+
+            case 'emaildetailedadminnotification':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'email_admin_responses_subj',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Detailed admin notification subject"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "",
+                    'associated' => "emaildetailedadminnotificationbody"
+                );
+                break;
+
+            case 'emaildetailedadminnotificationbody':
+                $aData = array(
+                    'type' => 1,
+                    'dbColumn' => 'email_admin_responses',
+                    'id1' => '',
+                    'id2' => '',
+                    'gid' => false,
+                    'qid' => false,
+                    'description' => gT("Detailed admin notification"),
+                    'HTMLeditorType' => "email",
+                    'HTMLeditorDisplay' => "Modal",
+                    'associated' => ""
+                );
+                break;
+        }
+        return $aData;
+    }
+
+    /**
+     *
+     *
+     * @return array
+     */
+    public function getAllTranslateFields()
+    {
+        return array_map([$this, 'setupTranslateFields'], $this->getTabNames());
+    }
+
+    /**
+     * @return string[]
+     */
+    public function getTabNames()
+    {
+        return [
+            "title",
+            "welcome",
+            "group",
+            "question",
+            "subquestion",
+            "answer",
+            "emailinvite",
+            "emailreminder",
+            "emailconfirmation",
+            "emailregistration",
+            "emailbasicadminnotification",
+            "emaildetailedadminnotification"
+        ];
+    }
+
+    /**
+     * Returns the survey object
+     *
+     * @return Survey
+     */
+    public function getSurvey()
+    {
+        return $this->survey;
     }
 }

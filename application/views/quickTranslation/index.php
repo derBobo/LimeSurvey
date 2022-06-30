@@ -1,7 +1,6 @@
 <?php
 
 /* @var $survey Survey */
-/* @var $adminmenu */
 /* @var $languageToTranslate  string  e.g. 'de' 'it' ... */
 /* @var $additionalLanguages array */
 
@@ -18,8 +17,6 @@
                 ['id' => 'translatemenu', 'class' => 'form-inline']
             );
             ?>
-            <?php //echo $adminmenu; ?>
-
             <!-- select box for languages 'class' => 'form-group' -->
             <div class="from-group">
                 <?php
@@ -68,4 +65,8 @@
             </h4>
         </div>
     </div>
+
+
+
+</div> <--! close div sidebody -->
 <?php

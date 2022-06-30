@@ -46,7 +46,7 @@ class QuickTranslationController extends LSBaseController
         Yii::app()->loadHelper("database");
         Yii::app()->loadHelper("admin.htmleditor");
         Yii::app()->loadHelper("surveytranslator");
-        //------------------------------------------------------------------------
+        //-----------------------------------------------------------------------
 
         //this GET-Param is the language to which it should be translated (e.g. 'de')
         $languageToTranslate = Yii::app()->getRequest()->getParam('lang');
@@ -83,27 +83,21 @@ class QuickTranslationController extends LSBaseController
             "survey_title" => $survey_title,
             "tolang" => $languageToTranslate,
         );
-        //$aViewUrls['translateheader_view'][] = $aData;
-
-        $tab_names = array("title", "welcome", "group", "question", "subquestion", "answer",
-            "emailinvite", "emailreminder", "emailconfirmation", "emailregistration",
-            "emailbasicadminnotification", "emaildetailedadminnotification");
-
+        $quickTranslation = new \LimeSurvey\Models\Services\QuickTranslation($oSurvey);
 
         if (!empty($languageToTranslate)) {
             // Only save if the administration user has the correct permission
             //todo: this is only necessary on save ...
             if ($actionvalue == "translateSave" && Permission::model()->hasSurveyPermission($surveyid, 'translations', 'update')) {
-                $this->translateSave($oSurvey, $languageToTranslate, $baselang, $tab_names);
+                $this->translateSave($languageToTranslate, $quickTranslation);
                 Yii::app()->setFlashMessage(gT("Saved"), 'success');
             }
 
             $tolangdesc = $supportedLanguages[$languageToTranslate]['description'];
             // Display tabs with fields to translate, as well as input fields for translated values
 
-            $views = $this->displayUntranslatedFields($oSurvey, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc);
-
-            //$aViewUrls = array_merge($aViewUrls, $this->displayUntranslatedFields($surveyid, $languageToTranslate, $baselang, $tab_names, $baselangdesc, $tolangdesc));
+            //todo: this view information has to be passed to the view
+            $views = $this->displayUntranslatedFields($oSurvey, $languageToTranslate, $baselang, $baselangdesc, $tolangdesc);
         }
 
         $aData['sidemenu']['state'] = false;
@@ -127,16 +121,17 @@ class QuickTranslationController extends LSBaseController
      * @param $survey Survey the survey object
      * @param $tolang
      * @param $baselang
-     * @param $tab_names
+     * @param $quickTranslation \LimeSurvey\Models\Services\QuickTranslation the quicktranslation object
      * @return void
      */
-    private function translateSave($survey, $tolang, $baselang, $tab_names)
+    private function translateSave($tolang, $quickTranslation)
     {
+        $tab_names = $quickTranslation->getTabNames();
         $tab_names_full = $tab_names;
-        $quickTranslate = new \LimeSurvey\Models\Services\QuickTranslation($survey);
 
+        //todo: this part could also into QuickTranslation
         foreach ($tab_names as $type) {
-            $amTypeOptions = $this->setupTranslateFields($type);
+            $amTypeOptions = $quickTranslation->setupTranslateFields($type);
             $type2 = $amTypeOptions["associated"];
 
             if (!empty($type2)) {
@@ -145,7 +140,7 @@ class QuickTranslationController extends LSBaseController
         }
 
         foreach ($tab_names_full as $type) {
-            $size = (int) Yii::app()->getRequest()->getPost("{$type}_size");
+            $size = (int) Yii::app()->getRequest()->getPost("{$type}_size"); //todo: what is size here?
             // start a loop in order to update each record
             $i = 0;
             while ($i <= $size) {
@@ -159,8 +154,7 @@ class QuickTranslationController extends LSBaseController
                         $id1 = Yii::app()->getRequest()->getPost("{$type}_id1_{$i}");
                         $id2 = Yii::app()->getRequest()->getPost("{$type}_id2_{$i}");
                         $iScaleID = Yii::app()->getRequest()->getPost("{$type}_scaleid_{$i}");
-                        $quickTranslate->updateTranslations($type, $tolang, $new, $id1, $id2, $iScaleID);
-                        //$this->query($type, 'queryupdate', $iSurveyID, $tolang, $baselang, $id1, $id2, $iScaleID, $new);
+                        $quickTranslation->updateTranslations($type, $tolang, $new, $id1, $id2, $iScaleID);
                     }
                 }
                 $i++;
@@ -169,44 +163,36 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
-     *
-     *
-     * @param string[] $tab_names
-     * @throws CException
-     */
-
-    /**
-     * @param $survey Survey the survey object
-     * @param $tolang
-     * @param $baselang
-     * @param $tab_names
-     * @param $baselangdesc
-     * @param $tolangdesc
+     * @param $quickTranslation \LimeSurvey\Models\Services\QuickTranslation the quick translation object
+     * @param $tolang string language to translate to
+     * @param $baselang  string the base language
+     * @param $baselangdesc string the base language description
+     * @param $tolangdesc string the language to translate description
      * @return array
      * @throws CException
      */
-    private function displayUntranslatedFields($survey, $tolang, $baselang, $tab_names, $baselangdesc, $tolangdesc)
+    private function displayUntranslatedFields($quickTranslation, $tolang, $baselang, $baselangdesc, $tolangdesc)
     {
         // Define aData
+        $survey = $quickTranslation->getSurvey();
         $aData['surveyid'] = $survey->sid;
-        $aData['tab_names'] = $tab_names;
+        $aData['tab_names'] = $quickTranslation->getTabNames();
         $aData['tolang'] = $tolang;
         $aData['baselang'] = $baselang;
         $aData['baselangdesc'] = $baselangdesc;
         $aData['tolangdesc'] = $tolangdesc;
+
         //This is for the tab navbar
-        $aData['amTypeOptions'] = array_map(array($this, 'setupTranslateFields'), $tab_names);
+        $aData['amTypeOptions'] = $quickTranslation->getAllTranslateFields();
+
         $aViewUrls['translateformheader_view'][] = $aData;
 
         //Set the output as empty
         $aViewUrls['output'] = '';
 
-        $quickTranslation = new \LimeSurvey\Models\Services\QuickTranslation($survey);
-
         //iterate through all tabs and define content of each tab
-        //$allTabNames = count($tab_names);
-        foreach ($tab_names as $tabName) {
-            $amTypeOptions = $this->setupTranslateFields($tabName);
+        foreach ($aData['tab_names'] as $tabName) {
+            $amTypeOptions = $quickTranslation->setupTranslateFields($tabName);
             // Setup form
             $evenRow = false; //deprecated => using css
 
@@ -220,7 +206,7 @@ class QuickTranslationController extends LSBaseController
             if (!empty($type2)) {
                 $associated = true;
                 //get type otions again again
-                $amTypeOptions2 = $this->setupTranslateFields($type2);
+                $amTypeOptions2 = $quickTranslation->setupTranslateFields($type2);
                 $resultbase2 = $quickTranslation->getTranslations($tabName, $baselang);
                 $resultto2 = $quickTranslation->getTranslations($tabName, $tolang);
             } else {
@@ -274,7 +260,7 @@ class QuickTranslationController extends LSBaseController
                 $aResultTo2 = array_merge($aResultTo2, $oResultTo2->getAttributes());
 
                 $textfrom = htmlspecialchars_decode($aRowfrom[$amTypeOptions["dbColumn"]]);
-//
+
                 $textto = $aResultTo[$amTypeOptions["dbColumn"]];
                 if ($associated) {
                     $textfrom2 = htmlspecialchars_decode($aResultBase2[$amTypeOptions2["dbColumn"]]);
@@ -289,10 +275,10 @@ class QuickTranslationController extends LSBaseController
                 $all_fields_empty = !($textform_length > 0);
 
                 $aData = array_merge($aData, array(
-                    'textfrom' => $this->cleanup($textfrom, array()),
-                    'textfrom2' => $this->cleanup($textfrom2, array()),
-                    'textto' => $this->cleanup($textto, array()),
-                    'textto2' => $this->cleanup($textto2, array()),
+                    'textfrom' => $this->cleanup($textfrom),
+                    'textfrom2' => $this->cleanup($textfrom2),
+                    'textto' => $this->cleanup($textto),
+                    'textto2' => $this->cleanup($textto2),
                     'rowfrom' => $aRowfrom,
                     'rowfrom2' => $aResultBase2,
                     'evenRow' => $evenRow,
@@ -312,13 +298,10 @@ class QuickTranslationController extends LSBaseController
                     $qid,
                     $tabName,
                     $amTypeOptions,
-                    $baselangdesc,
-                    $tolangdesc,
                     $textfrom,
                     $textto,
                     $j,
-                    $aRowfrom, //todo: what happend here?
-                    $evenRow
+                    $aRowfrom //todo: what happend here?
                 );
                 if ($associated && strlen(trim($textfrom2)) > 0) {
                     $aData['translateFields'] .= $this->displayTranslateFields(
@@ -327,13 +310,10 @@ class QuickTranslationController extends LSBaseController
                         $qid,
                         $type2,
                         $amTypeOptions2,
-                        $baselangdesc,
-                        $tolangdesc,
                         $textfrom2,
                         $textto2,
                         $j,
-                        $aResultBase2, //todo:  what happend here?
-                        $evenRow
+                        $aResultBase2 //todo:  what happend here?
                     );
                 }
 
@@ -350,7 +330,13 @@ class QuickTranslationController extends LSBaseController
         return $aViewUrls;
     }
 
-    private function cleanup($string, $options = array())
+    /**
+     *
+     *
+     * @param $string
+     * @return string
+     */
+    private function cleanup($string): string
     {
         if (extension_loaded('tidy')) {
             $oTidy = new tidy();
@@ -363,492 +349,6 @@ class QuickTranslationController extends LSBaseController
 
         return $cleansedString;
     }
-
-    /**
-     * creates a customised array with database query
-     * information for use by survey translation
-     * @param string $type Type of database field that is being translated, e.g. title, question, etc.
-     * @return array
-     */
-    private function setupTranslateFields($type)
-    {
-        $aData = array();
-
-        switch ($type) {
-            case 'title':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_title',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Survey title and description"),
-                    'HTMLeditorType' => "title",
-                    'HTMLeditorDisplay' => "Inline",
-                    'associated' => "description"
-                );
-                break;
-
-            case 'description':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_description',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Description:"),
-                    'HTMLeditorType' => "description",
-                    'HTMLeditorDisplay' => "Inline",
-                    'associated' => ""
-                );
-                break;
-
-            case 'welcome':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_welcometext',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Welcome and end text"),
-                    'HTMLeditorType' => "welcome",
-                    'HTMLeditorDisplay' => "Inline",
-                    'associated' => "end"
-                );
-                break;
-
-            case 'end':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_endtext',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("End message:"),
-                    'HTMLeditorType' => "end",
-                    'HTMLeditorDisplay' => "Inline",
-                    'associated' => ""
-                );
-                break;
-
-            case 'group':
-                $aData = array(
-                    'type' => 2,
-                    'dbColumn' => 'group_name',
-                    'id1' => 'gid',
-                    'id2' => '',
-                    'gid' => true,
-                    'qid' => false,
-                    'description' => gT("Question groups"),
-                    'HTMLeditorType' => "group",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => "group_desc"
-                );
-                break;
-
-            case 'group_desc':
-                $aData = array(
-                    'type' => 2,
-                    'dbColumn' => 'description',
-                    'id1' => 'gid',
-                    'id2' => '',
-                    'gid' => true,
-                    'qid' => false,
-                    'description' => gT("Group description"),
-                    'HTMLeditorType' => "group_desc",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'question':
-                $aData = array(
-                    'type' => 3,
-                    'dbColumn' => 'question',
-                    'id1' => 'qid',
-                    'id2' => '',
-                    'gid' => true,
-                    'qid' => true,
-                    'description' => gT("Questions"),
-                    'HTMLeditorType' => "question",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => "question_help"
-                );
-                break;
-
-            case 'question_help':
-                $aData = array(
-                    'type' => 3,
-                    'dbColumn' => 'help',
-                    'id1' => 'qid',
-                    'id2' => '',
-                    'gid' => true,
-                    'qid' => true,
-                    'description' => gT("Question help"),
-                    'HTMLeditorType' => "question_help",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'subquestion':
-                $aData = array(
-                    'type' => 4,
-                    'dbColumn' => 'question',
-                    'id1' => 'qid',
-                    'id2' => '',
-                    'gid' => true,
-                    'qid' => true,
-                    'description' => gT("Subquestions"),
-                    'HTMLeditorType' => "question",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'answer': // TODO not touched
-                $aData = array(
-                    'type' => 5,
-                    'dbColumn' => 'answer',
-                    'id1' => 'qid',
-                    'id2' => 'code',
-                    'scaleid' => 'scale_id',
-                    'gid' => false,
-                    'qid' => true,
-                    'description' => gT("Answer options"),
-                    'HTMLeditorType' => "subquestion",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emailinvite':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_invite_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Invitation email subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emailinvitebody"
-                );
-                break;
-
-            case 'emailinvitebody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_invite',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Invitation email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emailreminder':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_remind_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Reminder email subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emailreminderbody"
-                );
-                break;
-
-            case 'emailreminderbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_remind',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Reminder email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emailconfirmation':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_confirm_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Confirmation email subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emailconfirmationbody"
-                );
-                break;
-
-            case 'emailconfirmationbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_confirm',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Confirmation email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emailregistration':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_register_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Registration email subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emailregistrationbody"
-                );
-                break;
-
-            case 'emailregistrationbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_register',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Registration email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'email_confirm':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_confirm_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Confirmation email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "email_confirmbody"
-                );
-                break;
-
-            case 'email_confirmbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'surveyls_email_confirm',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Confirmation email"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emailbasicadminnotification':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'email_admin_notification_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Basic admin notification subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emailbasicadminnotificationbody"
-                );
-                break;
-
-            case 'emailbasicadminnotificationbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'email_admin_notification',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Basic admin notification"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-
-            case 'emaildetailedadminnotification':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'email_admin_responses_subj',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Detailed admin notification subject"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "",
-                    'associated' => "emaildetailedadminnotificationbody"
-                );
-                break;
-
-            case 'emaildetailedadminnotificationbody':
-                $aData = array(
-                    'type' => 1,
-                    'dbColumn' => 'email_admin_responses',
-                    'id1' => '',
-                    'id2' => '',
-                    'gid' => false,
-                    'qid' => false,
-                    'description' => gT("Detailed admin notification"),
-                    'HTMLeditorType' => "email",
-                    'HTMLeditorDisplay' => "Modal",
-                    'associated' => ""
-                );
-                break;
-        }
-        return $aData;
-    }
-
-    /**
-     * @param string $action
-     * @param string $type
-     */
-    /**
-    private function query($type, $action, $iSurveyID, $tolang, $baselang, $id1 = "", $id2 = "", $iScaleID = "", $new = "")
-    {
-        $amTypeOptions = array();
-        // TODO: Fallthru on purpose or not?
-        switch ($action) {
-            case "queryto":
-                $baselang = $tolang;
-            /* FALLTHRU
-            case "querybase":
-                switch ($type) {
-                    case 'title':
-                    case 'description':
-                    case 'welcome':
-                    case 'end':
-                    case 'emailinvite':
-                    case 'emailinvitebody':
-                    case 'emailreminder':
-                    case 'emailreminderbody':
-                    case 'emailconfirmation':
-                    case 'emailconfirmationbody':
-                    case 'emailregistration':
-                    case 'emailregistrationbody':
-                    case 'email_confirm':
-                    case 'email_confirmbody':
-                    case 'emailbasicadminnotification':
-                    case 'emailbasicadminnotificationbody':
-                    case 'emaildetailedadminnotification':
-                    case 'emaildetailedadminnotificationbody':
-                        return SurveyLanguageSetting::model()->resetScope()->findAllByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $baselang));
-                    case 'group':
-                    case 'group_desc':
-                        return QuestionGroup::model()->with('questiongroupl10ns', array('condition' => 'language = ' . $baselang))->findAllByAttributes(array('sid' => $iSurveyID), array('order' => 't.gid'));
-                    case 'question':
-                    case 'question_help':
-                        return Question::model()->with('questionl10ns', array('condition' => 'language = ' . $baselang))->with('parent', 'group')->findAllByAttributes(array('sid' => $iSurveyID, 'parent_qid' => 0), array('order' => 'group_order, t.question_order, t.scale_id'));
-                    case 'subquestion':
-                        return Question::model()
-                            ->with('questionl10ns', array('condition' => 'language = ' . $baselang))
-                            ->with('parent', array('condition' => 'language = ' . $baselang))
-                            ->with('group', array('condition' => 'language = ' . $baselang))
-                            ->findAllByAttributes(array('sid' => $iSurveyID), array('order' => 'group_order, parent.question_order, t.scale_id, t.question_order', 'condition' => 't.parent_qid>0', 'params' => array()));
-                    case 'answer':
-                        return Answer::model()
-                            ->with('answerl10ns', array('condition' => 'language = ' . $baselang))
-                            ->with('question')
-                            ->with('group')
-                            ->findAllByAttributes(array(), array('order' => 'group_order, question.question_order, t.scale_id, t.sortorder', 'condition' => 'question.sid=:sid', 'params' => array(':sid' => $iSurveyID)));
-                }
-            /* FALLTHRU
-            case "queryupdate":
-                switch ($type) {
-                    case 'title':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_title' => substr($new, 0, 200)));
-                    case 'description':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_description' => $new));
-                    case 'welcome':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_welcometext' => $new));
-                    case 'end':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_endtext' => $new));
-                    case 'emailinvite':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_invite_subj' => $new));
-                    case 'emailinvitebody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_invite' => $new));
-                    case 'emailreminder':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_remind_subj' => $new));
-                    case 'emailreminderbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_remind' => $new));
-                    case 'emailconfirmation':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_confirm_subj' => $new));
-                    case 'emailconfirmationbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_confirm' => $new));
-                    case 'emailregistration':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_register_subj' => $new));
-                    case 'emailregistrationbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_register' => $new));
-                    case 'emailbasicadminnotification':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('email_admin_notification_subj' => $new));
-                    case 'emailbasicadminnotificationbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('email_admin_notification' => $new));
-                    case 'emaildetailedadminnotification':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('email_admin_responses_subj' => $new));
-                    case 'emaildetailedadminnotificationbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('email_admin_responses' => $new));
-                    case 'email_confirm':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_confirm_subject' => $new));
-                    case 'email_confirmbody':
-                        return SurveyLanguageSetting::model()->updateByPk(array('surveyls_survey_id' => $iSurveyID, 'surveyls_language' => $tolang), array('surveyls_email_confirm' => $new));
-                    case 'group':
-                        return QuestionGroupL10n::model()->updateAll(array('group_name' => mb_substr($new, 0, 100)), 'gid = :gid and language = :language', array(':gid' => $id1, ':language' => $tolang));
-                    case 'group_desc':
-                        return QuestionGroupL10n::model()->updateAll(array('description' => $new), 'gid = :gid and language = :language', array(':gid' => $id1, ':language' => $tolang));
-                    case 'question':
-                        return QuestionL10n::model()->updateAll(array('question' => $new), 'qid = :qid and language = :language', array(':qid' => $id1, ':language' => $tolang));
-                    case 'question_help':
-                        return QuestionL10n::model()->updateAll(array('help' => $new), 'qid = :qid and language = :language', array(':qid' => $id1, ':language' => $tolang));
-                    case 'subquestion':
-                        return QuestionL10n::model()->updateAll(array('question' => $new), 'qid = :qid and language = :language', array(':qid' => $id1, ':language' => $tolang));
-                    case 'answer':
-                        $oAnswer = Answer::model()->find('qid = :qid and code = :code and scale_id = :scale_id', array(':qid' => $id1, ':code' => $id2, ':scale_id' => $iScaleID));
-                        return AnswerL10n::model()->updateAll(array('answer' => $new), 'aid = :aid and language = :language', array(':aid' => $oAnswer->aid, ':language' => $tolang));
-                }
-        }
-    }
-
-    */
 
     /**
      * Formats and displays header of translation fields table
@@ -872,19 +372,18 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
-     * displayTranslateFields() Formats and displays translation fields (base language as well as to language)
+     * Formats and displays translation fields (base language as well as to language)
+     *
      * @param string $iSurveyID Survey id
      * @param string $gid Group id
      * @param string $qid Question id
      * @param string $type Type of database field that is being translated, e.g. title, question, etc.
      * @param array $amTypeOptions Array containing options associated with each $type
-     * @param string $baselangdesc The source translation language, e.g. "English"
-     * @param string $tolangdesc The target translation language, e.g. "German"
      * @param string $textfrom The text to be translated in source language
      * @param string $textto The text to be translated in target language
      * @param integer $i Counter
-     * @param string $rowfrom Contains current row of database query
-     * @param boolean $evenRow TRUE for even rows, FALSE for odd rows
+     * @param array $rowfrom Contains current row of database query
+     *
      * @return string $translateoutput
      */
     private function displayTranslateFields(
@@ -893,16 +392,12 @@ class QuickTranslationController extends LSBaseController
         $qid,
         $type,
         $amTypeOptions,
-        $baselangdesc,
-        $tolangdesc,
         $textfrom,
         $textto,
         $i,
-        $rowfrom,
-        $evenRow
+        $rowfrom
     ) {
-        $translateoutput = "";
-        $translateoutput .= "<tr>";
+        $translateoutput = "<tr>";
         $value1 = (!empty($amTypeOptions["id1"])) ? $rowfrom[$amTypeOptions["id1"]] : "";
         $value2 = (!empty($amTypeOptions["id2"])) ? $rowfrom[$amTypeOptions["id2"]] : "";
         $iScaleID = (!empty($amTypeOptions["scaleid"])) ? $rowfrom[$amTypeOptions["scaleid"]] : "";
@@ -931,12 +426,6 @@ class QuickTranslationController extends LSBaseController
         $nrows = max($this->calcNRows($textfrom), $this->calcNRows($textto));
         $translateoutput .= CHtml::hiddenField("{$type}_oldvalue_{$i}", $textto);
 
-        $minHeight = 'auto';
-        if ($amTypeOptions["HTMLeditorDisplay"] == "Popup") {
-            $minHeight = "25px";
-        } elseif ($amTypeOptions["HTMLeditorDisplay"] == "Modal") {
-            $minHeight = "30px";
-        }
         $aDisplayOptions = array(
             'class' => 'col-sm-10',
             'cols' => '75',
@@ -1010,7 +499,7 @@ class QuickTranslationController extends LSBaseController
     }
 
     /**
-     * displayTranslateFieldsFooter() Formats and displays footer of translation fields table
+     * Formats and displays footer of translation fields table
      * @return string $translateoutput
      */
     private function displayTranslateFieldsFooter()
