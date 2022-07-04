@@ -200,8 +200,18 @@ class QuickTranslation
     }
 
     /**
-     * Creates a customised array with database information
-     * information for use by survey translation
+     * Creates a customised array with database information for use by survey translation.
+     * This array structure is the base for the whole algorithm. Each returned array consists of the following information
+     *  type -->
+     *  dbColumn  -->  the name of the db column where to find the
+     *  id1  -->
+     *  id2  -->
+     *  gid  -->
+     *  qid  -->
+     *  description -->
+     *  HTMLeditorType -->
+     *  HTMLeditorDisplay -->
+     *  associated --> the associated field for the current one. If empty string this one has no associated field
      *
      * @param string $type Type of database field that is being translated, e.g. title, question, etc.
      * @return array
@@ -213,7 +223,7 @@ class QuickTranslation
         switch ($type) {
             case 'title':
                 $aData = array(
-                    'type' => 1,
+                    'type' => 1,  //todo: what is this good for?
                     'dbColumn' => 'surveyls_title',
                     'id1' => '', //todo: description... what is id1?
                     'id2' => '', //todo: description... what is id2?
@@ -586,6 +596,8 @@ class QuickTranslation
     }
 
     /**
+     * Returns all tab names.
+     *
      * @return string[]
      */
     public function getTabNames()

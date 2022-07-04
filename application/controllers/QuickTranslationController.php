@@ -94,10 +94,10 @@ class QuickTranslationController extends LSBaseController
             }
 
             $tolangdesc = $supportedLanguages[$languageToTranslate]['description'];
-            // Display tabs with fields to translate, as well as input fields for translated values
+            // display tabs with fields to translate, as well as input fields for translated values
 
             //todo: this view information has to be passed to the view
-            $views = $this->displayUntranslatedFields($oSurvey, $languageToTranslate, $baselang, $baselangdesc, $tolangdesc);
+            $views = $this->displayUntranslatedFields($quickTranslation, $languageToTranslate, $baselang, $baselangdesc, $tolangdesc);
         }
 
         $aData['sidemenu']['state'] = false;
@@ -113,7 +113,8 @@ class QuickTranslationController extends LSBaseController
         $this->render('index', [
             'survey' => $oSurvey,
             'languageToTranslate' => $languageToTranslate,
-            'additionalLanguages' => $additionalLanguages
+            'additionalLanguages' => $additionalLanguages,
+            'viewData' => $views
         ]);
     }
 
@@ -219,9 +220,9 @@ class QuickTranslationController extends LSBaseController
             //always set first tab active
             $aData['activeTab'] = $tabName === 'title';
 
-            $aData['translateTabs'] = $this->displayTranslateFieldsHeader($baselangdesc, $tolangdesc, $tabName);
             $aViewUrls['output'] .= $this->renderPartial("translatetabs_view", $aData, true);
 
+            //iterates through active record results depending on the tab
             $countResultBase = count($resultbase);
             for ($j = 0; $j < $countResultBase; $j++) {
                 $oRowfrom = $resultbase[$j];
@@ -334,9 +335,9 @@ class QuickTranslationController extends LSBaseController
      *
      *
      * @param $string
-     * @return string
+     * @return string|null
      */
-    private function cleanup($string): string
+    private function cleanup($string): ?string
     {
         if (extension_loaded('tidy')) {
             $oTidy = new tidy();
@@ -348,27 +349,6 @@ class QuickTranslationController extends LSBaseController
         }
 
         return $cleansedString;
-    }
-
-    /**
-     * Formats and displays header of translation fields table
-     * @param string $baselangdesc The source translation language, e.g. "English"
-     * @param string $tolangdesc The target translation language, e.g. "German"
-     * @param string $type
-     * @return string $translateoutput
-     */
-    private function displayTranslateFieldsHeader($baselangdesc, $tolangdesc, $type)
-    {
-
-        $translateoutput = "<table class='table table-striped'>";
-        $translateoutput .= '<thead>';
-        $threeRows = ($type == 'question' || $type == 'subquestion' || $type == 'question_help' || $type == 'answer');
-        $translateoutput .= $threeRows ? '<th class="col-md-2 text-strong">' . gT('Question code / ID') . "</th>" : '';
-        $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $baselangdesc . "</th>";
-        $translateoutput .= '<th class="' . ($threeRows ? "col-sm-5 text-strong" : "col-sm-6") . '" >' . $tolangdesc . "</th>";
-        $translateoutput .= '</thead>';
-
-        return $translateoutput;
     }
 
     /**
