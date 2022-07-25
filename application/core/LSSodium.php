@@ -44,11 +44,8 @@ class LSSodium
      */
     protected function checkIfKeyExists()
     {
-        print(App()->getConfig('encryptionsecretboxkey'));
-        print("\n");
-        print(App()->getConfig('encryptionnonce'));
         if (empty(App()->getConfig('encryptionsecretboxkey')) && empty(App()->getConfig('encryptionnonce'))) {
-            throw new CHttpException(500, gT("key: "+ +App()->getConfig('encryptionsecretboxkey')+" nonce: "+App()->getConfig('encryptionnonce'));
+            throw new CHttpException(500, gT("key: "+ +App()->getConfig('encryptionsecretboxkey')+" nonce: "+App()->getConfig('encryptionnonce')));
             $this->generateEncryptionKeys();
         }
         if ($this->sEncryptionNonce === null) {
