@@ -46,7 +46,7 @@ class LSSodium
     {
         print(App()->getConfig('encryptionsecretboxkey'));
         print("\n");
-        print(App()->getConfig('encryptionnonce')));
+        print(App()->getConfig('encryptionnonce'));
         if (empty(App()->getConfig('encryptionsecretboxkey')) && empty(App()->getConfig('encryptionnonce'))) {
             $this->generateEncryptionKeys();
         }
